@@ -62,7 +62,7 @@ enum VideoLibrary {
             try? data.write(to: videos.appendingPathComponent(thumbnail), options: .atomic)
             thumbnailFilename = thumbnail
         }
-        return VideoSession(id: id, createdAt: Date(), title: "\(activity.rawValue) session", activity: activity,
+        return VideoSession(id: id, createdAt: Date(), title: activity == .general ? "Video review" : "\(activity.rawValue) session", activity: activity,
                             goal: "", criteria: "", durationSeconds: duration, byteCount: Int64(bytes),
                             mimeType: ext == "mov" ? "video/quicktime" : "video/mp4",
                             filename: filename, thumbnailFilename: thumbnailFilename)

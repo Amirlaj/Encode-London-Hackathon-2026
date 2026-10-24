@@ -6,7 +6,7 @@ struct SessionDetailView: View {
     @Environment(\.dismiss) private var dismiss
     let id: UUID
     @State private var title = ""
-    @State private var activity = Activity.tennis
+    @State private var activity = Activity.general
     @State private var goal = ""
     @State private var criteria = ""
     @State private var player: AVPlayer?
@@ -28,7 +28,7 @@ struct SessionDetailView: View {
                                     player?.play()
                                     withAnimation { proxy.scrollTo("video", anchor: .top) }
                                 }
-                            } else if session.status.isRemoteBusy || session.status == .uploading || session.status == .paused || session.serverOrigin != nil {
+                            } else if store.activeID == id || session.status.isRemoteBusy || session.status == .uploading || session.status == .paused || session.serverOrigin != nil {
                                 progressCard(session)
                             } else { reviewForm(session) }
                             if let message = session.error { ErrorNotice(message: message) }
@@ -39,7 +39,7 @@ struct SessionDetailView: View {
             } else { ContentUnavailableView("Session not found", systemImage: "video.slash") }
         }
         .background(Palette.background.ignoresSafeArea())
-        .navigationTitle(store.session(id)?.report == nil ? "Your session" : "Your review")
+        .navigationTitle(store.session(id)?.report == nil ? "Your video" : "Your feedback")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -77,7 +77,7 @@ struct SessionDetailView: View {
         VStack(alignment: .leading, spacing: 14) {
             VideoPlayer(player: player).frame(height: 220).clipShape(RoundedRectangle(cornerRadius: 22))
             HStack {
-                Label(session.activity.rawValue, systemImage: session.activity.symbol)
+                Label("Your video", systemImage: "video")
                 Spacer()
                 Text("\(session.duration) · \(session.sizeLabel)").monospacedDigit()
             }.font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.muted)
@@ -87,21 +87,16 @@ struct SessionDetailView: View {
     private func reviewForm(_ session: VideoSession) -> some View {
         VStack(alignment: .leading, spacing: 22) {
             VStack(alignment: .leading, spacing: 8) {
-                Eyebrow(text: "Make the feedback yours")
-                Text("What would you\nlike to work on?").font(.system(size: 29, weight: .semibold)).tracking(-1).foregroundStyle(Palette.ink)
+                Eyebrow(text: "Ready when you are")
+                Text("Get feedback\non your work.").font(.system(size: 29, weight: .semibold)).tracking(-1).foregroundStyle(Palette.ink)
             }
-            ActivitySelector(selected: $activity)
-            VStack(alignment: .leading, spacing: 16) {
-                field("Session name", placeholder: "Give this session a name", text: $title)
-                field("Your goal", placeholder: activity.placeholder, text: $goal, axis: .vertical)
-                field("What does good look like? (optional)", placeholder: "For example: prepare early, stay balanced, recover after each shot.", text: $criteria, axis: .vertical)
-            }
+            field("Task or expected result (optional)", placeholder: "Describe what you were trying to do…", text: $goal, axis: .vertical)
             Button {
                 store.edit(id, title: title, activity: activity, goal: goal, criteria: criteria)
                 player?.pause()
                 store.review(id)
             } label: {
-                Label(store.activeID == id ? "Connecting…" : "Upload & get feedback", systemImage: "sparkles")
+                Label("Get feedback", systemImage: "sparkles")
             }.buttonStyle(PrimaryButtonStyle()).disabled(store.activeID != nil)
                 .accessibilityIdentifier("review-button")
             Text("Your video will be sent to your review server and Google Gemini for analysis. Feedback is based on what can be seen and heard.")
@@ -129,7 +124,7 @@ struct SessionDetailView: View {
                     Spacer()
                     if store.activeID == id { ProgressView().tint(Palette.ink) }
                 }
-                Text(session.status.label).font(.title2.weight(.semibold)).foregroundStyle(Palette.ink)
+                Text(session.status == .draft ? "Starting your review" : session.status.label).font(.title2.weight(.semibold)).foregroundStyle(Palette.ink)
                 VStack(alignment: .leading, spacing: 10) {
                     if session.status == .uploading || session.status == .paused {
                         ProgressView(value: session.progress).tint(Palette.ink)
@@ -137,12 +132,12 @@ struct SessionDetailView: View {
                             .font(.caption).foregroundStyle(Palette.muted)
                     }
                     Text(session.status.isRemoteBusy
-                         ? "Gemini is looking for useful moments and patterns. You can leave the app; your review will continue on the server."
+                         ? "Looking for mistakes, missed steps, and ways to improve your work. You can leave the app; your review will continue."
                          : "Keep Replay open while uploading. If you leave or lose connection, resume here without starting over.")
                         .font(.subheadline).foregroundStyle(Palette.muted).lineSpacing(3)
                 }
                 if store.activeID == id && !session.status.isRemoteBusy {
-                    Button("Pause upload") { store.pause() }.buttonStyle(SecondaryButtonStyle())
+                    Button(session.status == .draft ? "Cancel" : "Pause upload") { store.pause() }.buttonStyle(SecondaryButtonStyle())
                 } else if store.activeID == nil {
                     Button(session.status.isRemoteBusy ? "Check for feedback" : session.status == .failed ? "Retry review" : "Resume upload & review") {
                         store.review(id)

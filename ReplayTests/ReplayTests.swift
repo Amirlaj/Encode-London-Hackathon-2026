@@ -41,6 +41,18 @@ final class ReplayTests: XCTestCase {
         XCTAssertEqual(restored.duration, "1:00:00")
     }
 
+    func testProblemDetailsRoundTripAndOlderReportsStillOpen() throws {
+        let encoded = try JSONEncoder().encode(ReviewReport.example)
+        let current = try JSONDecoder().decode(ReviewReport.self, from: encoded)
+        XCTAssertEqual(current.issues?.first?.seconds, 42)
+        XCTAssertFalse(try XCTUnwrap(current.issues?.first?.howToFix).isEmpty)
+        var legacy = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        legacy.removeValue(forKey: "issues")
+        let restored = try JSONDecoder().decode(ReviewReport.self, from: JSONSerialization.data(withJSONObject: legacy))
+        XCTAssertNil(restored.issues)
+        XCTAssertEqual(restored.improvements, ReviewReport.example.improvements)
+    }
+
     func testTimestampFormattingAndUnknownVerdict() {
         XCTAssertEqual(42.0.clockString, "00:42")
         XCTAssertEqual(3599.0.clockString, "59:59")

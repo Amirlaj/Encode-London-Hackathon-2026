@@ -15,7 +15,7 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 24) {
                     VStack(alignment: .leading, spacing: 10) {
                         Eyebrow(text: "One connection. A fresh perspective.")
-                        Text("Connect your coach.").font(.system(size: 29, weight: .semibold)).tracking(-1).foregroundStyle(Palette.ink)
+                        Text("Connect your reviewer.").font(.system(size: 29, weight: .semibold)).tracking(-1).foregroundStyle(Palette.ink)
                         Text("Connect Replay to your review server to get feedback from Gemini 4 Argon.")
                             .font(.subheadline).foregroundStyle(Palette.muted).lineSpacing(3)
                     }
@@ -65,7 +65,7 @@ struct SettingsView: View {
                         note("Your video, your feedback", text: "Recordings and reports stay on this iPhone until you delete the session. Uploading sends the video to your server and Google for review.", icon: "video")
                         note("After a successful review", text: "The server removes its video copy and requests deletion of the Gemini file and interaction. Unfinished uploads and server records expire after 24 hours. Failed cleanup is retried.", icon: "clock.arrow.circlepath")
                     }
-                    Text("Replay 1.0 · Built for deliberate practice")
+                    Text("Replay 1.0 · Clear feedback on your work")
                         .font(.system(size: 11, weight: .medium, design: .monospaced)).foregroundStyle(Palette.muted)
                 }.padding(24)
             }.background(Palette.background).navigationTitle("Settings").navigationBarTitleDisplayMode(.inline)

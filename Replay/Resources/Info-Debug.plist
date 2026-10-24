@@ -11,7 +11,7 @@
     <key>CFBundleShortVersionString</key><string>1.0</string>
     <key>CFBundleVersion</key><string>1</string>
     <key>LSRequiresIPhoneOS</key><true/>
-    <key>NSCameraUsageDescription</key><string>Record your practice or task to get feedback on your technique.</string>
+    <key>NSCameraUsageDescription</key><string>Record your work to get feedback on mistakes and how to improve the result.</string>
     <key>NSMicrophoneUsageDescription</key><string>Include sound in your recording so Replay can review spoken instructions and presentations.</string>
     <key>NSLocalNetworkUsageDescription</key><string>Connect to your review server on the same Wi-Fi network.</string>
     <key>NSAppTransportSecurity</key>

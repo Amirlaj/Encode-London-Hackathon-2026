@@ -2,6 +2,8 @@ import Foundation
 import SwiftUI
 
 enum Activity: String, CaseIterable, Identifiable, Codable {
+    case general = "General"
+    // Retain legacy values so existing saved videos can still be opened.
     case tennis = "Tennis"
     case workout = "Workout"
     case presentation = "Presentation"
@@ -10,18 +12,11 @@ enum Activity: String, CaseIterable, Identifiable, Codable {
     var id: String { rawValue }
     var symbol: String {
         switch self {
+        case .general: return "video"
         case .tennis: return "tennis.racket"
         case .workout: return "figure.strengthtraining.traditional"
         case .presentation: return "person.wave.2"
         case .other: return "sparkles"
-        }
-    }
-    var placeholder: String {
-        switch self {
-        case .tennis: return "Help me improve my forehand and recovery between shots."
-        case .workout: return "Check my technique and consistency throughout the session."
-        case .presentation: return "Check whether my explanation is clear and well paced."
-        case .other: return "Describe the task and what a good result looks like."
         }
     }
 }
@@ -54,14 +49,25 @@ struct ReviewReport: Codable, Equatable {
     let criteria: [ReviewCriterion]
     let nextPractice: String
     let limitations: [String]
+    // Older saved reports predate structured issues.
+    var issues: [ReviewIssue]? = nil
 
     var verdictLabel: String {
         switch verdict {
         case "on_track": return "On track"
-        case "needs_work": return "Room to improve"
+        case "needs_work": return "Needs attention"
         default: return "Not enough evidence"
         }
     }
+}
+
+struct ReviewIssue: Codable, Identifiable, Equatable {
+    let seconds: Double?
+    let title: String
+    let observation: String
+    let whyItMatters: String
+    let howToFix: String
+    var id: String { "\(seconds ?? -1)-\(title)" }
 }
 
 struct ReviewMoment: Codable, Identifiable, Equatable {
@@ -161,21 +167,25 @@ enum VideoRules {
 extension ReviewReport {
     static let example = ReviewReport(
         verdict: "needs_work",
-        headline: "A strong start. A steadier finish.",
-        summary: "In this illustrative tennis report, early preparation helps the player find a clean contact point. Recovering sooner after each shot is the next thing to work on.",
+        headline: "Check the alignment before moving on.",
+        summary: "In this example assembly task, the panel is secured while its edges are uneven. The final check also leaves the back of the assembly out of view.",
         confidence: "medium",
-        strengths: ["Good shoulder turn before the forward swing.", "Balanced contact on the slower incoming balls."],
-        improvements: ["Recover toward the centre immediately after the follow-through.", "Start the split step as the opponent makes contact."],
+        strengths: ["The parts are laid out before assembly begins."],
+        improvements: ["Check that the panel edges line up before securing them.", "Show the completed assembly from both sides during the final check."],
         moments: [
-            ReviewMoment(seconds: 42, title: "Early preparation", observation: "The racket is prepared before the ball bounces.", suggestion: "Keep this same preparation on faster balls.", kind: "strength"),
-            ReviewMoment(seconds: 138, title: "A late recovery", observation: "The player stays wide after the forehand.", suggestion: "Use two quick recovery steps before the next shot.", kind: "improvement"),
-            ReviewMoment(seconds: 265, title: "Better balance", observation: "A wider base keeps the body stable through contact.", suggestion: "Repeat this setup as the rally gets longer.", kind: "strength")
+            ReviewMoment(seconds: 15, title: "Parts prepared", observation: "The parts are arranged before the first step.", suggestion: "Keep this preparation for the next task.", kind: "strength"),
+            ReviewMoment(seconds: 42, title: "Uneven panel edges", observation: "The panel is secured while one edge sits higher than the other.", suggestion: "Align the edges before securing the panel.", kind: "improvement"),
+            ReviewMoment(seconds: 138, title: "Final check is incomplete", observation: "Only the front of the finished assembly is shown.", suggestion: "Check and show both sides before calling the task complete.", kind: "improvement")
         ],
         criteria: [
-            ReviewCriterion(name: "Preparation before contact", assessment: "met", evidence: "An early shoulder turn is visible in the example rally."),
-            ReviewCriterion(name: "Recovery after each shot", assessment: "partly_met", evidence: "Recovery is less consistent when pulled wide.")
+            ReviewCriterion(name: "Parts aligned before fastening", assessment: "not_met", evidence: "The panel edges are visibly uneven at 00:42."),
+            ReviewCriterion(name: "Completed result checked", assessment: "not_visible", evidence: "The recording does not show the back of the assembly.")
         ],
-        nextPractice: "Try five minutes of forehand, recover, split step. Focus on getting ready for the next ball before adding power.",
-        limitations: ["This is a sample report, not an analysis of your video.", "A single camera angle cannot show every detail of the racket or ball."]
+        nextPractice: "Recheck the panel alignment, then show both sides of the finished work in one clear shot.",
+        limitations: ["This is a sample report, not an analysis of your video.", "The back of the assembly cannot be assessed from this camera angle."],
+        issues: [
+            ReviewIssue(seconds: 42, title: "The panel was secured out of alignment", observation: "One edge sits higher than the adjoining panel when it is fastened.", whyItMatters: "An uneven fit can prevent the next part from lining up correctly.", howToFix: "Check the instructions, align both edges, and verify the fit before securing the panel."),
+            ReviewIssue(seconds: 138, title: "The final check does not show the whole result", observation: "The recording ends after showing only the front.", whyItMatters: "The back connections cannot be verified from the available footage.", howToFix: "Inspect the completed work from both sides and include that check in the recording.")
+        ]
     )
 }

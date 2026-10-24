@@ -8,15 +8,17 @@ final class ReplayUITests: XCTestCase {
         return app
     }
 
-    func testHomeActivitiesAndSessions() {
+    func testGeneralHomeAndSavedVideos() {
         let app = launch()
         XCTAssertTrue(app.buttons["record-button"].waitForExistence(timeout: 10))
-        app.buttons["activity-Workout"].tap()
-        XCTAssertTrue(app.buttons["activity-Workout"].isSelected)
-        app.buttons["tab-Sessions"].tap()
-        XCTAssertTrue(app.staticTexts["Your sessions"].exists)
-        XCTAssertTrue(app.staticTexts["Your first session starts here."].exists)
-        app.buttons["Start a session"].tap()
+        XCTAssertTrue(app.buttons["import-photos"].exists)
+        XCTAssertTrue(app.textViews["task-description"].exists || app.textFields["task-description"].exists)
+        XCTAssertFalse(app.buttons["activity-Tennis"].exists)
+        XCTAssertFalse(app.staticTexts["Tennis"].exists)
+        app.buttons["tab-Your videos"].tap()
+        XCTAssertTrue(app.staticTexts["Your videos"].exists)
+        XCTAssertTrue(app.staticTexts["No videos yet."].exists)
+        app.buttons["Add a video"].tap()
         XCTAssertTrue(app.buttons["record-button"].exists)
     }
 
@@ -25,11 +27,14 @@ final class ReplayUITests: XCTestCase {
         app.swipeUp()
         app.buttons["example-button"].tap()
         XCTAssertTrue(app.staticTexts["EXAMPLE REVIEW"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["A strong start. A steadier finish."].exists)
+        XCTAssertTrue(app.staticTexts["Check the alignment before moving on."].exists)
+        XCTAssertFalse(app.staticTexts["Tennis"].exists)
         app.swipeUp()
-        XCTAssertTrue(app.staticTexts["Keep doing"].exists)
+        XCTAssertTrue(app.staticTexts["What needs fixing"].exists)
+        XCTAssertTrue(app.staticTexts["Why it matters"].firstMatch.exists)
+        XCTAssertTrue(app.staticTexts["How to fix it"].firstMatch.exists)
         app.buttons["Done"].tap()
-        XCTAssertTrue(app.buttons["tab-Practice"].exists)
+        XCTAssertTrue(app.buttons["tab-Review"].exists)
     }
 
     func testSettingsAndSimulatorCameraFallback() {
@@ -40,7 +45,7 @@ final class ReplayUITests: XCTestCase {
         app.buttons["Done"].tap()
         app.buttons["record-button"].tap()
         XCTAssertTrue(app.staticTexts["The simulator has no camera. Run Replay on your iPhone to record, or import a video here."].waitForExistence(timeout: 5))
-        app.buttons["Back to practice"].tap()
+        app.buttons["Back to review"].tap()
         XCTAssertTrue(app.buttons["record-button"].exists)
     }
 }

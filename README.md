@@ -1,13 +1,13 @@
-# Replay — a simple iPhone video coach
+# Replay — simple feedback on your work
 
-Record a practice or task for up to an hour, or import a video from Photos or Files. Tell Replay what you want to improve and what a good result looks like. It uploads the video and uses **Gemini 4 Argon (`gemini-4-argon`)** to return:
+Record your work for up to an hour, or upload a video from Photos or Files. Optionally describe the task or intended result. Choosing or finishing a video starts a review using **Gemini 4 Argon (`gemini-4-argon`)** and returns:
 
 - An honest assessment: on track, needs work, or not enough evidence.
-- What went well and what to change.
-- Timestamped observations that jump to the matching moment in your video.
-- A check against your criteria and one focused next practice.
+- Problems first: what went wrong, why it matters, and how to fix it.
+- Timestamps that jump to the moment where each problem is visible.
+- Useful strengths, a check against the intended result, and one clear next step.
 
-Tennis, workouts, presentations, and other tasks are supported. The example review is clearly labeled and never substitutes for real analysis.
+There are no activity categories to choose. Replay identifies the task from the footage and your optional description. The example assembly review is clearly labeled and never substitutes for real analysis. Older saved videos and reviews remain readable.
 
 [View the iPhone preview](docs/replay-home.png)
 
@@ -36,7 +36,7 @@ The server listens on port **8787**. With the example configuration it accepts c
 
 Use `http://127.0.0.1:8787` in the simulator. On a physical iPhone, use your Mac's LAN address, such as `http://192.168.1.20:8787`; both devices must be on the same network. Allow local network access when prompted. Debug builds permit local HTTP. Release builds keep App Transport Security enabled; use an HTTPS server for distribution.
 
-Choose an activity, record or import, add your goal, then tap **Upload & get feedback**. Recording and saving videos work before configuring Gemini. A real AI review requires your API key; no live Gemini request has been made as part of setup.
+Optionally describe the work on the home screen, then tap **Upload & get feedback** or **Record a video**. After choosing a video or finishing the recording, Replay saves it and starts the review automatically. There is no second submission form. If the connection is not configured, the video is kept and its page explains what needs setting up; tap **Get feedback** after connecting. Recording and saving videos work before configuring Gemini. A real AI review requires your API key; no live Gemini request has been made as part of setup.
 
 ## Recording and long uploads
 
@@ -59,7 +59,7 @@ After successful analysis, the server removes its video copy and requests deleti
 
 For public distribution, add per-user authentication, quotas, HTTPS hosting, suitable persistent storage, and a privacy policy/App Store disclosure matching your deployment. Do not ship the shared connection token as a public credential. Set `GEMINI_MODEL` on the server to change models; the configured model must support video, background Interactions, agentic processing, and structured output.
 
-Feedback is based on visible/audible evidence. It is not a guarantee that work is correct. Fast motion, occlusion, poor audio, and sampling can limit tennis or other technique assessments. The prompt explicitly asks for uncertainty and a `cannot_assess` verdict when needed.
+Feedback is based on visible/audible evidence. It is not a guarantee that work is correct. Fast motion, occlusion, poor audio, and sampling can limit assessments. The prompt prioritizes mistakes and concrete corrections, never forces a quota of faults, and distinguishes an unrecorded step from a proven omission. It explicitly asks for uncertainty and a `cannot_assess` verdict when needed.
 
 ## Verification
 
@@ -70,9 +70,11 @@ xcodebuild -project Replay.xcodeproj -scheme Replay \
   -derivedDataPath /tmp/Replay-build CODE_SIGNING_ALLOWED=NO test
 ```
 
-Backend tests cover authentication, upload boundaries, resumable chunks, duplicate chunk protection, restart recovery, retry after failure, cleanup, report validation, and the Gemini request contract. Swift tests cover media limits, connection validation, persistence, and timestamp formatting. UI tests cover activity selection, sessions, the example report, settings, and simulator camera fallback. Simulator camera capture and a real hour-long device recording require a physical iPhone.
+Backend tests cover authentication, upload boundaries, resumable chunks, duplicate chunk protection, restart recovery, retry after failure, cleanup, structured problem/fix validation, and the Gemini request contract. Swift tests cover media limits, connection validation, persistence, older-report compatibility, and timestamp formatting. UI tests cover the general home screen, saved videos, problem-first example feedback, settings, and simulator camera fallback. Simulator camera capture and a real hour-long device recording require a physical iPhone.
 
-Verified on 24 October 2026: **11 backend tests, 6 iOS unit tests, and 3 UI tests passed**. The simulator Debug build and unsigned physical-iPhone Release build succeeded. Live Gemini analysis and an actual hour-long camera recording still need your API key and a physical device respectively.
+Live Gemini analysis and an actual hour-long camera recording still need your API key and a physical device respectively.
+
+Verified after the general-purpose update: **12 backend tests, 7 iOS unit tests, and 3 UI tests passed**, including structured issue validation and compatibility with older saved reports.
 
 The Xcode project and icon are checked in. To regenerate them after changing the file list:
 

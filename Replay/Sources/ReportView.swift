@@ -16,17 +16,30 @@ struct ReportContent: View {
                 }
                 Text(report.headline).font(.system(size: 28, weight: .semibold)).tracking(-0.8).foregroundStyle(.white)
                 Text(report.summary).font(.system(size: 14)).foregroundStyle(.white.opacity(0.8)).lineSpacing(4)
-                Text("\(report.confidence.capitalized) confidence · AI coaching feedback")
+                Text("\(report.confidence.capitalized) confidence · AI feedback")
                     .font(.system(size: 10, weight: .medium, design: .monospaced)).foregroundStyle(.white.opacity(0.55))
             }.padding(24).frame(maxWidth: .infinity, alignment: .leading).background(Palette.ink, in: RoundedRectangle(cornerRadius: 26))
 
-            if !report.strengths.isEmpty { feedbackList("Keep doing", symbol: "checkmark", items: report.strengths, color: Palette.ink) }
-            if !report.improvements.isEmpty { feedbackList("Try adjusting", symbol: "arrow.up.right", items: report.improvements, color: Palette.orange) }
+            if let issues = report.issues, !issues.isEmpty {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("What needs fixing").font(.system(size: 21, weight: .semibold)).foregroundStyle(Palette.ink)
+                    ForEach(issues) { issue in issueCard(issue) }
+                }.accessibilityIdentifier("issues-section")
+            } else if !report.improvements.isEmpty {
+                feedbackList("Suggested fixes", symbol: "arrow.up.right", items: report.improvements, color: Palette.orange)
+            } else if report.verdict == "on_track" {
+                Card {
+                    Label("No clear problems were found in the visible work.", systemImage: "checkmark.circle")
+                        .font(.subheadline).foregroundStyle(Palette.ink)
+                }
+            }
+
+            if !report.strengths.isEmpty { feedbackList("What went well", symbol: "checkmark", items: report.strengths, color: Palette.ink) }
 
             if !report.moments.isEmpty {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack {
-                        Text("Moments that matter").font(.system(size: 20, weight: .semibold)).tracking(-0.5)
+                        Text("Video moments").font(.system(size: 20, weight: .semibold)).tracking(-0.5)
                         Spacer()
                         Text("\(report.moments.count)").font(.system(size: 11, weight: .bold)).padding(7).background(Palette.line, in: Circle())
                     }.foregroundStyle(Palette.ink)
@@ -75,7 +88,7 @@ struct ReportContent: View {
             }
 
             VStack(alignment: .leading, spacing: 12) {
-                Label("For your next session", systemImage: "scope").font(.system(size: 15, weight: .semibold))
+                Label("Your next step", systemImage: "scope").font(.system(size: 15, weight: .semibold))
                 Text(report.nextPractice).font(.system(size: 16)).lineSpacing(5)
             }.foregroundStyle(Palette.ink).padding(22).frame(maxWidth: .infinity, alignment: .leading)
                 .background(Palette.accent, in: RoundedRectangle(cornerRadius: 24))
@@ -88,6 +101,41 @@ struct ReportContent: View {
                     }
                 }.foregroundStyle(Palette.muted).padding(.horizontal, 4)
             }
+        }
+    }
+
+    private func issueCard(_ issue: ReviewIssue) -> some View {
+        Card {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(alignment: .top, spacing: 12) {
+                    Text(issue.title).font(.system(size: 17, weight: .semibold)).foregroundStyle(Palette.ink)
+                    Spacer(minLength: 0)
+                    if let seconds = issue.seconds {
+                        Button { onMoment?(seconds) } label: {
+                            HStack(spacing: 5) {
+                                if onMoment != nil { Image(systemName: "play.fill").font(.system(size: 8)) }
+                                Text(seconds.clockString).font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            }.foregroundStyle(Palette.ink).padding(.horizontal, 10).padding(.vertical, 9)
+                                .background(Palette.accent.opacity(0.3), in: Capsule())
+                        }.buttonStyle(.plain).disabled(onMoment == nil)
+                            .accessibilityLabel("Jump to \(seconds.clockString): \(issue.title)")
+                    }
+                }
+                issueDetail("What happened", text: issue.observation)
+                issueDetail("Why it matters", text: issue.whyItMatters)
+                VStack(alignment: .leading, spacing: 6) {
+                    Label("How to fix it", systemImage: "arrow.up.right").font(.system(size: 12, weight: .semibold))
+                    Text(issue.howToFix).font(.system(size: 14)).lineSpacing(3)
+                }.foregroundStyle(Palette.ink).padding(14).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Palette.accent.opacity(0.2), in: RoundedRectangle(cornerRadius: 14))
+            }
+        }
+    }
+
+    private func issueDetail(_ title: String, text: String) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title).font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.ink)
+            Text(text).font(.system(size: 14)).foregroundStyle(Palette.muted).lineSpacing(3)
         }
     }
 
@@ -116,7 +164,7 @@ struct ExampleReportView: View {
                     Label("EXAMPLE REVIEW", systemImage: "info.circle")
                         .font(.system(size: 10, weight: .bold, design: .monospaced)).tracking(1.5).foregroundStyle(Palette.muted)
                     Text("An idea of what’s ahead.").font(.system(size: 27, weight: .semibold)).tracking(-0.8).foregroundStyle(Palette.ink)
-                    Text("Illustrative feedback for a tennis practice. Your own review will be based on your recording and goals.")
+                    Text("An example of feedback on an assembly task. Your review will focus on the work shown in your own video.")
                         .font(.subheadline).foregroundStyle(Palette.muted)
                     ReportContent(report: .example)
                 }.padding(22)

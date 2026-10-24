@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 struct ContentView: View {
     @EnvironmentObject private var store: SessionStore
     @State private var selectedTab = 0
-    @State private var activity = Activity.tennis
+    @State private var taskDescription = ""
     @State private var path: [UUID] = []
     @State private var showSettings = false
     @State private var showCamera = false
@@ -31,7 +31,7 @@ struct ContentView: View {
             .sheet(isPresented: $showSettings) { SettingsView().environmentObject(store) }
             .sheet(isPresented: $showExample) { ExampleReportView() }
             .fullScreenCover(isPresented: $showCamera) {
-                RecordingView(activity: activity) { url in
+                RecordingView { url in
                     showCamera = false
                     importVideo(url, removeSource: true)
                 }
@@ -42,7 +42,7 @@ struct ContentView: View {
                     let access = url.startAccessingSecurityScopedResource()
                     Task {
                         defer { if access { url.stopAccessingSecurityScopedResource() } }
-                        do { path.append(try await store.addVideo(url, activity: activity)) }
+                        do { try await prepareReview(url, removeSource: false) }
                         catch { self.error = error.localizedDescription }
                     }
                 case .failure(let error): self.error = error.localizedDescription
@@ -57,7 +57,7 @@ struct ContentView: View {
                         guard let video = try await item.loadTransferable(type: ImportedVideo.self) else {
                             throw ReplayError.message("This video could not be imported. Try choosing it from Files.")
                         }
-                        path.append(try await store.addVideo(video.url, activity: activity, removeSource: true))
+                        try await prepareReview(video.url, removeSource: true)
                     } catch { self.error = error.localizedDescription }
                 }
             }
@@ -94,59 +94,68 @@ struct ContentView: View {
     private var home: some View {
         Group {
             VStack(alignment: .leading, spacing: 10) {
-                Eyebrow(text: "A fresh look at your practice")
-                Text("A little better.\nEvery session.")
+                Eyebrow(text: "Feedback on your work")
+                Text("See what\nneeds fixing.")
                     .font(.system(size: 37, weight: .semibold)).tracking(-1.6).lineSpacing(-1)
                     .foregroundStyle(Palette.ink).fixedSize(horizontal: false, vertical: true)
-                Text("Record what you do. See what to do next.")
-                    .font(.system(size: 14)).foregroundStyle(Palette.muted)
+                Text("Upload a video of any task. Find out what went wrong and how to improve it.")
+                    .font(.system(size: 15)).foregroundStyle(Palette.muted).lineSpacing(4)
             }
 
-            ZStack(alignment: .bottomLeading) {
-                CourtArt()
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("YOUR NEXT\nBREAKTHROUGH")
-                        .font(.system(size: 11, weight: .bold, design: .monospaced)).tracking(2).lineSpacing(4)
-                        .foregroundStyle(.white.opacity(0.9))
-                    HStack(spacing: 5) {
-                        Image(systemName: "viewfinder")
-                        Text("Starts with a new perspective.")
-                    }.font(.system(size: 10, weight: .medium)).foregroundStyle(.white.opacity(0.7))
-                }.padding(20)
-            }
-            .frame(height: 173).clipShape(RoundedRectangle(cornerRadius: 24))
-            .overlay(alignment: .topLeading) {
-                HStack(spacing: 5) {
-                    Circle().fill(Palette.accent).frame(width: 5, height: 5)
-                    Text("UP TO 60 MIN").font(.system(size: 9, weight: .bold, design: .monospaced)).tracking(1)
-                }.foregroundStyle(.white).padding(.horizontal, 10).padding(.vertical, 7)
-                    .background(.black.opacity(0.15), in: Capsule()).padding(17)
-            }
-
-            VStack(alignment: .leading, spacing: 12) {
-                Eyebrow(text: "What are we working on?")
-                ActivitySelector(selected: $activity)
+            Card {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Text("What is the task?").font(.system(size: 14, weight: .semibold)).foregroundStyle(Palette.ink)
+                        Spacer()
+                        Text("Optional").font(.system(size: 11)).foregroundStyle(Palette.muted)
+                    }
+                    TextField("Describe the work or the result you wanted…", text: $taskDescription, axis: .vertical)
+                        .font(.system(size: 14)).lineLimit(2...4)
+                        .accessibilityIdentifier("task-description")
+                        .onChange(of: taskDescription) { _, value in
+                            if value.count > 2000 { taskDescription = String(value.prefix(2000)) }
+                        }
+                }
             }
 
             VStack(spacing: 10) {
+                HStack(spacing: 10) {
+                    PhotosPicker(selection: $photoItem, matching: .videos, preferredItemEncoding: .current) {
+                        Label("Upload & get feedback", systemImage: "arrow.up.doc")
+                    }.buttonStyle(PrimaryButtonStyle()).accessibilityIdentifier("import-photos")
+                    Button { showFiles = true } label: {
+                        Image(systemName: "folder").font(.system(size: 18))
+                            .foregroundStyle(Palette.ink).frame(width: 56, height: 56)
+                            .background(.white, in: RoundedRectangle(cornerRadius: 18))
+                            .overlay(RoundedRectangle(cornerRadius: 18).stroke(Palette.line, lineWidth: 1))
+                    }.accessibilityLabel("Upload from Files & get feedback").accessibilityIdentifier("import-files")
+                }
                 Button { error = nil; showCamera = true } label: {
                     HStack(spacing: 10) {
                         Image(systemName: "record.circle").font(.system(size: 21))
-                        Text("Record a session")
+                        Text("Record a video")
                         Spacer()
                         Image(systemName: "arrow.up.right").font(.system(size: 16))
                     }.padding(.horizontal, 20)
-                }.buttonStyle(PrimaryButtonStyle()).accessibilityIdentifier("record-button")
-                HStack(spacing: 10) {
-                    PhotosPicker(selection: $photoItem, matching: .videos, preferredItemEncoding: .current) {
-                        Label("Upload a video", systemImage: "arrow.up.doc")
-                    }.buttonStyle(SecondaryButtonStyle()).accessibilityIdentifier("import-photos")
-                    Button { showFiles = true } label: {
-                        Image(systemName: "folder").font(.system(size: 18))
-                            .foregroundStyle(Palette.ink).frame(width: 54, height: 54)
-                            .background(.white, in: RoundedRectangle(cornerRadius: 18))
-                            .overlay(RoundedRectangle(cornerRadius: 18).stroke(Palette.line, lineWidth: 1))
-                    }.accessibilityLabel("Import from Files").accessibilityIdentifier("import-files")
+                }.buttonStyle(SecondaryButtonStyle()).accessibilityIdentifier("record-button")
+                Text("Up to 60 minutes · MP4 or MOV")
+                    .font(.system(size: 11, weight: .medium)).foregroundStyle(Palette.muted).padding(.top, 4)
+            }.disabled(store.activeID != nil)
+
+            if let activeID = store.activeID {
+                Button { path.append(activeID) } label: {
+                    Label("Open your current review", systemImage: "arrow.right.circle")
+                }.font(.subheadline.weight(.semibold))
+            }
+
+            Text("Choosing or finishing a video starts a review. It is sent to your review server and Google Gemini for analysis.")
+                .font(.system(size: 11)).foregroundStyle(Palette.muted).lineSpacing(3)
+
+            Card {
+                VStack(alignment: .leading, spacing: 17) {
+                    feedbackStep("What needs fixing", detail: "Mistakes and missed steps visible in your work.", symbol: "exclamationmark.bubble")
+                    feedbackStep("Where it happened", detail: "Timestamps to see the problem for yourself.", symbol: "play.rectangle")
+                    feedbackStep("How to improve it", detail: "Clear, practical changes to make next.", symbol: "checkmark.circle")
                 }
             }
 
@@ -155,8 +164,8 @@ struct ContentView: View {
                     Image(systemName: "sparkles").font(.system(size: 20)).foregroundStyle(Palette.ink)
                         .frame(width: 42, height: 42).background(Palette.accent.opacity(0.35), in: RoundedRectangle(cornerRadius: 13))
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Small details. Real progress.").font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.ink)
-                        Text("Take a look at an example review").font(.system(size: 11)).foregroundStyle(Palette.muted)
+                        Text("See an example review").font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.ink)
+                        Text("A problem, an explanation, a fix.").font(.system(size: 11)).foregroundStyle(Palette.muted)
                     }
                     Spacer(minLength: 0)
                     Image(systemName: "arrow.right").foregroundStyle(Palette.muted).font(.system(size: 13))
@@ -168,18 +177,18 @@ struct ContentView: View {
     private var library: some View {
         VStack(alignment: .leading, spacing: 22) {
             VStack(alignment: .leading, spacing: 8) {
-                Eyebrow(text: "Your progress, in perspective")
-                Text("Your sessions").font(.system(size: 34, weight: .semibold)).tracking(-1.2).foregroundStyle(Palette.ink)
-                Text("Every practice has something to teach you.").font(.subheadline).foregroundStyle(Palette.muted)
+                Eyebrow(text: "Your work and feedback")
+                Text("Your videos").font(.system(size: 34, weight: .semibold)).tracking(-1.2).foregroundStyle(Palette.ink)
+                Text("Revisit the problems and the next steps.").font(.subheadline).foregroundStyle(Palette.muted)
             }
             if store.sessions.isEmpty {
                 VStack(spacing: 18) {
                     Image(systemName: "rectangle.stack.badge.play").font(.system(size: 40, weight: .light)).foregroundStyle(Palette.ink)
                         .frame(width: 100, height: 100).background(Palette.accent.opacity(0.25), in: Circle())
-                    Text("Your first session starts here.").font(.headline).foregroundStyle(Palette.ink)
+                    Text("No videos yet.").font(.headline).foregroundStyle(Palette.ink)
                     Text("Record or upload a video, then keep your feedback and next steps in one place.")
                         .font(.subheadline).foregroundStyle(Palette.muted).multilineTextAlignment(.center)
-                    Button("Start a session") { selectedTab = 0 }.buttonStyle(PrimaryButtonStyle())
+                    Button("Add a video") { selectedTab = 0 }.buttonStyle(PrimaryButtonStyle())
                 }.padding(24).padding(.vertical, 28).background(.white, in: RoundedRectangle(cornerRadius: 26))
             } else {
                 ForEach(store.sessions) { session in
@@ -191,8 +200,8 @@ struct ContentView: View {
 
     private var tabBar: some View {
         HStack {
-            tab("Practice", symbol: "viewfinder", value: 0)
-            tab("Sessions", symbol: "rectangle.stack", value: 1)
+            tab("Review", symbol: "viewfinder", value: 0)
+            tab("Your videos", symbol: "rectangle.stack", value: 1)
         }.padding(.top, 12).padding(.bottom, 6)
             .background(Palette.background.opacity(0.98))
             .overlay(alignment: .top) { Rectangle().fill(Palette.line).frame(height: 1) }
@@ -210,8 +219,28 @@ struct ContentView: View {
 
     private func importVideo(_ url: URL, removeSource: Bool) {
         Task {
-            do { path.append(try await store.addVideo(url, activity: activity, removeSource: removeSource)) }
+            do { try await prepareReview(url, removeSource: removeSource) }
             catch { self.error = error.localizedDescription }
+        }
+    }
+
+    private func prepareReview(_ url: URL, removeSource: Bool) async throws {
+        let context = taskDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+        let id = try await store.addVideo(url, activity: .general, removeSource: removeSource)
+        store.edit(id, title: context.isEmpty ? "Video review" : String(context.prefix(80)), activity: .general, goal: context, criteria: "")
+        error = nil
+        path.append(id)
+        store.review(id)
+    }
+
+    private func feedbackStep(_ title: String, detail: String, symbol: String) -> some View {
+        HStack(alignment: .top, spacing: 13) {
+            Image(systemName: symbol).font(.system(size: 18)).foregroundStyle(Palette.ink)
+                .frame(width: 36, height: 36).background(Palette.accent.opacity(0.25), in: RoundedRectangle(cornerRadius: 11))
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(.system(size: 14, weight: .semibold)).foregroundStyle(Palette.ink)
+                Text(detail).font(.system(size: 12)).foregroundStyle(Palette.muted)
+            }
         }
     }
 }

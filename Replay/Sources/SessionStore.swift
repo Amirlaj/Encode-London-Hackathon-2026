@@ -66,7 +66,7 @@ final class SessionStore: ObservableObject {
         recoveredRecordings = true
         let files = (try? FileManager.default.contentsOfDirectory(at: VideoLibrary.recordings, includingPropertiesForKeys: nil)) ?? []
         for file in files where file.pathExtension == "mov" {
-            do { _ = try await addVideo(file, activity: .other, removeSource: true) }
+            do { _ = try await addVideo(file, activity: .general, removeSource: true) }
             catch { storageError = "An interrupted recording could not be recovered. Its original file has been kept on this iPhone." }
         }
     }
@@ -75,7 +75,7 @@ final class SessionStore: ObservableObject {
         update(id) { session in
             guard session.serverOrigin == nil else { return }
             session.title = String(title.trimmingCharacters(in: .whitespacesAndNewlines).prefix(120))
-            if session.title.isEmpty { session.title = "\(activity.rawValue) session" }
+            if session.title.isEmpty { session.title = activity == .general ? "Video review" : "\(activity.rawValue) session" }
             session.activity = activity
             session.goal = String(goal.prefix(2000))
             session.criteria = String(criteria.prefix(4000))

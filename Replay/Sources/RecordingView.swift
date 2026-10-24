@@ -4,7 +4,6 @@ struct RecordingView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var camera = CameraManager()
-    let activity: Activity
     let onRecorded: (URL) -> Void
 
     var body: some View {
@@ -19,7 +18,7 @@ struct RecordingView: View {
                             .frame(width: 44, height: 44).background(.white.opacity(0.12), in: Circle())
                     }.disabled(camera.recording).accessibilityLabel("Close camera")
                     Spacer()
-                    Label(activity.rawValue, systemImage: activity.symbol).font(.system(size: 14, weight: .semibold))
+                    Label("Record your work", systemImage: "video").font(.system(size: 14, weight: .semibold))
                     Spacer()
                     Text("720p").font(.system(size: 12, weight: .medium, design: .monospaced))
                         .frame(width: 44, height: 44)
@@ -35,15 +34,15 @@ struct RecordingView: View {
                     VStack(spacing: 16) {
                         Image(systemName: "video.slash").font(.system(size: 36, weight: .light))
                         Text(error).font(.body).multilineTextAlignment(.center)
-                        Button("Back to practice") { dismiss() }.buttonStyle(PrimaryButtonStyle(light: true))
+                        Button("Back to review") { dismiss() }.buttonStyle(PrimaryButtonStyle(light: true))
                     }.padding(24).background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 24))
                 } else if !camera.ready {
                     ProgressView("Starting camera…").tint(.white)
                 } else if !camera.recording {
                     VStack(spacing: 10) {
                         Image(systemName: "viewfinder").font(.system(size: 42, weight: .ultraLight))
-                        Text("Give yourself some room.").font(.title3.weight(.semibold))
-                        Text("Keep your whole body and the activity in frame.")
+                        Text("Keep the work in view.").font(.title3.weight(.semibold))
+                        Text("Show the important steps and the finished result.")
                             .font(.subheadline).foregroundStyle(.white.opacity(0.7)).multilineTextAlignment(.center)
                     }
                 }

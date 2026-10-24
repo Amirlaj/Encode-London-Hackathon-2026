@@ -11,13 +11,14 @@ import { extractOutput, validateReport } from '../report.mjs';
 
 const token = 'test-token-only-not-a-real-secret-123456789';
 const report = {
-  verdict: 'needs_work', headline: 'Recover after the shot', summary: 'Recovery is late after a wide forehand.',
-  confidence: 'medium', strengths: ['Early shoulder turn'], improvements: ['Recover toward the centre'],
-  moments: [{ seconds: 1, title: 'Late recovery', observation: 'The player stays wide.', suggestion: 'Take two recovery steps.', kind: 'improvement' }],
-  criteria: [{ name: 'Recovery', assessment: 'partly_met', evidence: 'Visible delay after contact.' }],
-  nextPractice: 'Practice recovery steps for five minutes.', limitations: ['One camera angle.']
+  verdict: 'needs_work', headline: 'Align the panel before fastening', summary: 'The panel edges are uneven when secured.',
+  confidence: 'medium', strengths: ['Parts are laid out first'], improvements: ['Check alignment before securing the panel'],
+  issues: [{ seconds: 1, title: 'Panel is misaligned', observation: 'One panel edge sits higher than the other.', whyItMatters: 'The next part may not fit correctly.', howToFix: 'Line up the edges before securing the panel.' }],
+  moments: [{ seconds: 1, title: 'Uneven edges', observation: 'The panel is not aligned.', suggestion: 'Check alignment before fastening.', kind: 'improvement' }],
+  criteria: [{ name: 'Alignment', assessment: 'not_met', evidence: 'Uneven edges are visible.' }],
+  nextPractice: 'Recheck alignment and inspect the completed work.', limitations: ['One camera angle.']
 };
-const metadata = (extra = {}) => ({ id: randomUUID(), title: 'Practice', activity: 'Tennis', goal: 'Recover earlier', criteria: '', durationSeconds: 4, byteCount: 16, mimeType: 'video/mp4', ...extra });
+const metadata = (extra = {}) => ({ id: randomUUID(), title: 'Assembly', activity: 'General', goal: 'Assemble the panels correctly', criteria: '', durationSeconds: 4, byteCount: 16, mimeType: 'video/mp4', ...extra });
 
 async function fixture(t, { provider, configured = true, dataDir } = {}) {
   const dir = dataDir ?? await mkdtemp(join(tmpdir(), 'replay-test-'));
@@ -172,6 +173,8 @@ test('Gemini request uses the exact model, agentic video, background execution, 
   assert.equal(posted.background, true);
   assert.equal(posted.input[0].processing, 'agentic');
   assert.equal(posted.response_format.mime_type, 'application/json');
+  assert.ok(posted.response_format.schema.required.includes('issues'));
+  assert.deepEqual(posted.response_format.schema.properties.issues.items.required, ['seconds', 'title', 'observation', 'whyItMatters', 'howToFix']);
   assert.match(posted.system_instruction, /cannot_assess/);
   assert.equal(job.interactionID, 'interaction-123');
 });
@@ -184,4 +187,15 @@ test('Gemini access failures produce useful messages without leaking a key', asy
 test('cleanup succeeds when Google already deleted the remote resources', async () => {
   const client = new GeminiClient({ apiKey: 'test-key', fetchImpl: async () => new Response('', { status: 404 }) });
   assert.equal(await client.cleanup({ googleFile: { name: 'files/expired' }, interactionID: 'expired' }), true);
+});
+
+test('problem feedback requires evidence and fixes, but does not require invented faults', () => {
+  const issue = report.issues[0];
+  for (const invalid of [{ seconds: 5 }, { seconds: -1 }, { howToFix: '' }, { whyItMatters: null }, { observation: '' }]) {
+    assert.throws(() => validateReport({ ...report, issues: [{ ...issue, ...invalid }] }, 4));
+  }
+  assert.throws(() => validateReport({ ...report, issues: [] }, 4));
+  assert.doesNotThrow(() => validateReport({ ...report, issues: [{ ...issue, seconds: null }] }, 4));
+  assert.doesNotThrow(() => validateReport({ ...report, verdict: 'on_track', issues: [], improvements: [], moments: [] }, 4));
+  assert.doesNotThrow(() => validateReport({ ...report, verdict: 'cannot_assess', issues: [], improvements: [], moments: [] }, 4));
 });
