@@ -100,7 +100,7 @@ final class CameraManager: NSObject, ObservableObject, AVCaptureFileOutputRecord
         } catch { self.error = "Could not check available storage. Please try again."; return }
         let url = VideoLibrary.recordings.appendingPathComponent("recording-\(UUID().uuidString).mov")
         queue.async { [weak self] in
-            guard let self, self.session.isRunning else { return }
+            guard let self, self.session.isRunning, !self.output.isRecording else { return }
             self.output.startRecording(to: url, recordingDelegate: self)
         }
     }

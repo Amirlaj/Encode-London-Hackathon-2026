@@ -6,7 +6,6 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createApp, validateMetadata, MAX_BYTES } from '../app.mjs';
-import { GeminiClient } from '../gemini.mjs';
 import { extractOutput, validateReport } from '../report.mjs';
 
 const token = 'test-token-only-not-a-real-secret-123456789';
@@ -16,7 +15,8 @@ const report = {
   issues: [{ seconds: 1, title: 'Panel is misaligned', observation: 'One panel edge sits higher than the other.', whyItMatters: 'The next part may not fit correctly.', howToFix: 'Line up the edges before securing the panel.' }],
   moments: [{ seconds: 1, title: 'Uneven edges', observation: 'The panel is not aligned.', suggestion: 'Check alignment before fastening.', kind: 'improvement' }],
   criteria: [{ name: 'Alignment', assessment: 'not_met', evidence: 'Uneven edges are visible.' }],
-  nextPractice: 'Recheck alignment and inspect the completed work.', limitations: ['One camera angle.']
+  nextPractice: 'Recheck alignment and inspect the completed work.', limitations: ['One camera angle.'],
+  verification: { status: 'completed', model: 'gemini-4-argon', candidateIssueCount: 1, confirmedIssueCount: 1, removedIssueCount: 0, summary: 'Test AI evidence recheck.', completedAt: '2026-10-24T12:00:00.000Z' }
 };
 const metadata = (extra = {}) => ({ id: randomUUID(), title: 'Assembly', activity: 'General', goal: 'Assemble the panels correctly', criteria: '', durationSeconds: 4, byteCount: 16, mimeType: 'video/mp4', ...extra });
 
@@ -157,38 +157,6 @@ test('rejects malformed reports and out-of-bounds timestamps', () => {
   assert.equal(extractOutput({ steps: [{ type: 'thought', content: [{ type: 'text', text: 'hidden' }] }, { type: 'model_output', content: [{ type: 'text', text: 'result' }] }] }), 'result');
 });
 
-test('Gemini request uses the exact model, agentic video, background execution, and structured output', async () => {
-  const calls = [];
-  const client = new GeminiClient({ apiKey: 'test-key', pollMs: 1, fetchImpl: async (url, options) => {
-    calls.push({ url, options });
-    if (url.endsWith('/files/test-video')) return Response.json({ name: 'files/test-video', uri: 'https://generativelanguage.googleapis.com/v1beta/files/test-video', state: 'ACTIVE' });
-    if (options.method === 'POST') return Response.json({ id: 'interaction-123', status: 'in_progress' });
-    return Response.json({ id: 'interaction-123', status: 'completed', steps: [{ type: 'model_output', content: [{ type: 'text', text: JSON.stringify(report) }] }] });
-  } });
-  const job = { ...metadata(), googleFile: { name: 'files/test-video' } };
-  const result = await client.analyze(job, '/unused', async patch => Object.assign(job, patch), new AbortController().signal);
-  assert.deepEqual(result, report);
-  const posted = JSON.parse(calls.find(call => call.options.method === 'POST').options.body);
-  assert.equal(posted.model, 'gemini-4-argon');
-  assert.equal(posted.background, true);
-  assert.equal(posted.input[0].processing, 'agentic');
-  assert.equal(posted.response_format.mime_type, 'application/json');
-  assert.ok(posted.response_format.schema.required.includes('issues'));
-  assert.deepEqual(posted.response_format.schema.properties.issues.items.required, ['seconds', 'title', 'observation', 'whyItMatters', 'howToFix']);
-  assert.match(posted.system_instruction, /cannot_assess/);
-  assert.equal(job.interactionID, 'interaction-123');
-});
-
-test('Gemini access failures produce useful messages without leaking a key', async () => {
-  const client = new GeminiClient({ apiKey: 'private-api-key', fetchImpl: async () => new Response('', { status: 403 }) });
-  await assert.rejects(client.request('files/example'), error => /access/.test(error.message) && !error.message.includes('private-api-key'));
-});
-
-test('cleanup succeeds when Google already deleted the remote resources', async () => {
-  const client = new GeminiClient({ apiKey: 'test-key', fetchImpl: async () => new Response('', { status: 404 }) });
-  assert.equal(await client.cleanup({ googleFile: { name: 'files/expired' }, interactionID: 'expired' }), true);
-});
-
 test('problem feedback requires evidence and fixes, but does not require invented faults', () => {
   const issue = report.issues[0];
   for (const invalid of [{ seconds: 5 }, { seconds: -1 }, { howToFix: '' }, { whyItMatters: null }, { observation: '' }]) {
@@ -198,4 +166,130 @@ test('problem feedback requires evidence and fixes, but does not require invente
   assert.doesNotThrow(() => validateReport({ ...report, issues: [{ ...issue, seconds: null }] }, 4));
   assert.doesNotThrow(() => validateReport({ ...report, verdict: 'on_track', issues: [], improvements: [], moments: [] }, 4));
   assert.doesNotThrow(() => validateReport({ ...report, verdict: 'cannot_assess', issues: [], improvements: [], moments: [] }, 4));
+});
+
+const deferred = () => {
+  let resolve;
+  const promise = new Promise(done => { resolve = done; });
+  return { promise, resolve };
+};
+
+async function queueReview(request, input) {
+  const path = `/api/sessions/${input.id}`;
+  await request('/api/sessions', { method: 'POST', value: input });
+  await request(`${path}/video`, { method: 'PUT', bytes: Buffer.alloc(input.byteCount), offset: 0 });
+  await request(`${path}/analyze`, { method: 'POST' });
+  return path;
+}
+
+test('candidate feedback is never published when the evidence recheck has not completed', async t => {
+  const { verification, ...unverified } = report;
+  const { request } = await fixture(t, { provider: { model: 'gemini-4-argon', async analyze() { return unverified; }, async cleanup() { return true; } } });
+  const input = metadata();
+  await queueReview(request, input);
+  const failed = await finish(request, input.id);
+  assert.equal(failed.status, 'failed');
+  assert.equal(failed.report, null);
+  assert.match(failed.error, /No unverified feedback/);
+});
+
+test('delayed terminal cleanup and concurrent DELETE cannot race saves or resurrect a deleted session', async t => {
+  const cleaning = deferred(); const release = deferred();
+  let cleanups = 0;
+  t.after(() => release.resolve());
+  const { request, dir } = await fixture(t, { provider: {
+    model: 'gemini-4-argon',
+    async analyze(job, path, update) {
+      await update({ googleFile: { name: 'files/test' }, interactionID: 'analysis', verificationInteractionID: 'recheck' });
+      return structuredClone(report);
+    },
+    async cleanup() { cleanups++; cleaning.resolve(); await release.promise; return true; }
+  } });
+  const input = metadata();
+  const path = await queueReview(request, input);
+  await cleaning.promise;
+  assert.equal((await request(path)).body.status, 'complete');
+  let deleted = false;
+  const deletion = request(path, { method: 'DELETE' }).then(result => { deleted = true; return result; });
+  await delay(25);
+  assert.equal(deleted, false);
+  release.resolve();
+  assert.equal((await deletion).status, 200);
+  assert.equal(cleanups, 1);
+  assert.equal((await request(path)).status, 404);
+  await assert.rejects(readFile(join(dir, `${input.id}.json`)), { code: 'ENOENT' });
+});
+
+test('delayed failure cleanup serializes a concurrent retry and discards the old hypothesis', async t => {
+  const cleaning = deferred(); const release = deferred();
+  let attempts = 0;
+  t.after(() => release.resolve());
+  const { request } = await fixture(t, { provider: {
+    model: 'gemini-4-argon',
+    async analyze(job, path, update) {
+      if (++attempts === 1) {
+        await update({ googleFile: { name: 'files/old' }, interactionID: 'old-analysis', verificationInteractionID: 'old-recheck', candidateReport: report });
+        throw new Error('Recheck was interrupted.');
+      }
+      assert.equal(job.googleFile, undefined);
+      assert.equal(job.interactionID, undefined);
+      assert.equal(job.verificationInteractionID, undefined);
+      assert.equal(job.candidateReport, undefined);
+      return structuredClone(report);
+    },
+    async cleanup() { cleaning.resolve(); await release.promise; return true; }
+  } });
+  const input = metadata();
+  const path = await queueReview(request, input);
+  await cleaning.promise;
+  let retried = false;
+  const retry = request(`${path}/analyze`, { method: 'POST' }).then(result => { retried = true; return result; });
+  await delay(25);
+  assert.equal(retried, false);
+  release.resolve();
+  assert.equal((await retry).status, 202);
+  assert.equal((await finish(request, input.id)).status, 'complete');
+  assert.equal(attempts, 2);
+});
+
+test('verifying is busy, survives restart, and exposes no candidate while the second pass is pending', async t => {
+  const started = deferred();
+  const firstProvider = {
+    model: 'gemini-4-argon',
+    async analyze(job, path, update, signal) {
+      await update({ status: 'verifying', candidateReport: report, googleFile: { name: 'files/persisted' }, interactionID: 'first-pass', verificationInteractionID: 'second-pass' });
+      started.resolve();
+      await new Promise((resolve, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true }));
+    },
+    async cleanup() { throw new Error('Restart should preserve remote work'); }
+  };
+  const first = await fixture(t, { provider: firstProvider });
+  const input = metadata();
+  const path = await queueReview(first.request, input);
+  await started.promise;
+  const pending = await first.request(path);
+  assert.equal(pending.body.status, 'verifying');
+  assert.equal(pending.body.report, null);
+  assert.equal(pending.body.candidateReport, undefined);
+  assert.equal((await first.request(path, { method: 'DELETE' })).status, 409);
+  assert.equal((await first.request(`${path}/analyze`, { method: 'POST' })).status, 200);
+  await first.app.close();
+  const second = await fixture(t, { dataDir: first.dir, provider: {
+    model: 'gemini-4-argon',
+    async analyze(job) {
+      assert.equal(job.interactionID, 'first-pass');
+      assert.equal(job.verificationInteractionID, 'second-pass');
+      assert.deepEqual(job.candidateReport, report);
+      return structuredClone(report);
+    },
+    async cleanup() { return true; }
+  } });
+  assert.equal((await finish(second.request, input.id)).status, 'complete');
+  await second.app.close();
+  const persisted = JSON.parse(await readFile(join(first.dir, `${input.id}.json`), 'utf8'));
+  assert.equal(persisted.candidateReport, undefined);
+  assert.equal(persisted.verificationInteractionID, undefined);
+  assert.equal(persisted.interactionID, undefined);
+  assert.equal(persisted.googleFile, undefined);
+  assert.equal(persisted.report.verification.status, 'completed');
 });

@@ -9,3 +9,7 @@ node_modules/
 *.xcresult
 *.log
 
+# Private real-input rehearsal reports and consented demo footage.
+artifacts/
+demo-videos/
+

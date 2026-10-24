@@ -50,7 +50,27 @@ final class ReplayTests: XCTestCase {
         legacy.removeValue(forKey: "issues")
         let restored = try JSONDecoder().decode(ReviewReport.self, from: JSONSerialization.data(withJSONObject: legacy))
         XCTAssertNil(restored.issues)
+        XCTAssertNil(restored.verification)
         XCTAssertEqual(restored.improvements, ReviewReport.example.improvements)
+    }
+
+    func testVerificationSummaryAndBusyStateSurviveDecoding() throws {
+        var report = ReviewReport.example
+        report.issues = Array((report.issues ?? []).prefix(1))
+        report.verification = ReviewVerification(
+            status: "completed", model: "gemini-4-argon", candidateIssueCount: 2,
+            confirmedIssueCount: 1, removedIssueCount: 1,
+            summary: "The original video was rechecked before publishing.", completedAt: "2026-10-24T12:00:00Z",
+            decisions: [
+                VerificationDecision(candidateIndex: 0, decision: "confirmed", reason: "The edges are visibly uneven at 00:42."),
+                VerificationDecision(candidateIndex: 1, decision: "uncertain", reason: "The back is not shown, so a skipped check cannot be established.")
+            ])
+        let restored = try JSONDecoder().decode(ReviewReport.self, from: JSONEncoder().encode(report))
+        XCTAssertEqual(restored.verification, report.verification)
+        XCTAssertEqual(restored.issues?.count, restored.verification?.confirmedIssueCount)
+        let status = try JSONDecoder().decode(SessionStatus.self, from: Data("\"verifying\"".utf8))
+        XCTAssertTrue(status.isRemoteBusy)
+        XCTAssertEqual(status.label, "Checking the evidence")
     }
 
     func testTimestampFormattingAndUnknownVerdict() {

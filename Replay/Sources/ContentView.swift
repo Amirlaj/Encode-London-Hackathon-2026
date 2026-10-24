@@ -6,6 +6,7 @@ struct ContentView: View {
     @EnvironmentObject private var store: SessionStore
     @State private var selectedTab = 0
     @State private var taskDescription = ""
+    @State private var taskCriteria = ""
     @State private var path: [UUID] = []
     @State private var showSettings = false
     @State private var showCamera = false
@@ -24,6 +25,7 @@ struct ContentView: View {
                     if let error = store.storageError { ErrorNotice(message: error) }
                 }.padding(.horizontal, 24).padding(.top, 12).padding(.bottom, 28)
             }
+            .scrollDismissesKeyboard(.interactively)
             .background(Palette.background.ignoresSafeArea())
             .toolbar(.hidden, for: .navigationBar)
             .safeAreaInset(edge: .bottom, spacing: 0) { tabBar }
@@ -115,6 +117,18 @@ struct ContentView: View {
                         .onChange(of: taskDescription) { _, value in
                             if value.count > 2000 { taskDescription = String(value.prefix(2000)) }
                         }
+                    DisclosureGroup("Add a checklist (optional)") {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("What should be done correctly? Add one instruction per line.")
+                                .font(.system(size: 12)).foregroundStyle(Palette.muted)
+                            TextField("Add the steps or checks to review…", text: $taskCriteria, axis: .vertical)
+                                .font(.system(size: 14)).lineLimit(3...7)
+                                .accessibilityIdentifier("task-criteria")
+                                .onChange(of: taskCriteria) { _, value in
+                                    if value.count > 4000 { taskCriteria = String(value.prefix(4000)) }
+                                }
+                        }.padding(.top, 10)
+                    }.font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.ink)
                 }
             }
 
@@ -227,7 +241,7 @@ struct ContentView: View {
     private func prepareReview(_ url: URL, removeSource: Bool) async throws {
         let context = taskDescription.trimmingCharacters(in: .whitespacesAndNewlines)
         let id = try await store.addVideo(url, activity: .general, removeSource: removeSource)
-        store.edit(id, title: context.isEmpty ? "Video review" : String(context.prefix(80)), activity: .general, goal: context, criteria: "")
+        store.edit(id, title: context.isEmpty ? "Video review" : String(context.prefix(80)), activity: .general, goal: context, criteria: taskCriteria.trimmingCharacters(in: .whitespacesAndNewlines))
         error = nil
         path.append(id)
         store.review(id)

@@ -22,7 +22,7 @@ enum Activity: String, CaseIterable, Identifiable, Codable {
 }
 
 enum SessionStatus: String, Codable {
-    case draft, uploading, paused, queued, processing, analyzing, complete, failed
+    case draft, uploading, paused, queued, processing, analyzing, verifying, complete, failed
     var label: String {
         switch self {
         case .draft: return "Ready to review"
@@ -31,11 +31,12 @@ enum SessionStatus: String, Codable {
         case .queued: return "In the queue"
         case .processing: return "Preparing video"
         case .analyzing: return "Reviewing your session"
+        case .verifying: return "Checking the evidence"
         case .complete: return "Feedback ready"
         case .failed: return "Needs your attention"
         }
     }
-    var isRemoteBusy: Bool { [.queued, .processing, .analyzing].contains(self) }
+    var isRemoteBusy: Bool { [.queued, .processing, .analyzing, .verifying].contains(self) }
 }
 
 struct ReviewReport: Codable, Equatable {
@@ -51,12 +52,39 @@ struct ReviewReport: Codable, Equatable {
     let limitations: [String]
     // Older saved reports predate structured issues.
     var issues: [ReviewIssue]? = nil
+    var verification: ReviewVerification? = nil
 
     var verdictLabel: String {
         switch verdict {
         case "on_track": return "On track"
         case "needs_work": return "Needs attention"
         default: return "Not enough evidence"
+        }
+    }
+}
+
+struct ReviewVerification: Codable, Equatable {
+    let status: String
+    let model: String
+    let candidateIssueCount: Int
+    let confirmedIssueCount: Int
+    let removedIssueCount: Int
+    let summary: String
+    let completedAt: String
+    var decisions: [VerificationDecision]? = nil
+}
+
+struct VerificationDecision: Codable, Identifiable, Equatable {
+    let candidateIndex: Int
+    let decision: String
+    let reason: String
+    var id: Int { candidateIndex }
+
+    var label: String {
+        switch decision {
+        case "confirmed": return "Supported by the video"
+        case "unsupported": return "Removed — not supported"
+        default: return "Removed — uncertain"
         }
     }
 }

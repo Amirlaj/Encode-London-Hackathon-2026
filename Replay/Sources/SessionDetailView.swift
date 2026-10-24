@@ -91,6 +91,10 @@ struct SessionDetailView: View {
                 Text("Get feedback\non your work.").font(.system(size: 29, weight: .semibold)).tracking(-1).foregroundStyle(Palette.ink)
             }
             field("Task or expected result (optional)", placeholder: "Describe what you were trying to do…", text: $goal, axis: .vertical)
+            DisclosureGroup("Task checklist (optional)") {
+                field("Steps or checks to review", placeholder: "Add one instruction per line…", text: $criteria, axis: .vertical)
+                    .padding(.top, 10)
+            }.font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.ink)
             Button {
                 store.edit(id, title: title, activity: activity, goal: goal, criteria: criteria)
                 player?.pause()
@@ -131,9 +135,7 @@ struct SessionDetailView: View {
                         Text("\(Int(session.progress * 100))% uploaded · \(ByteCountFormatter.string(fromByteCount: session.uploadedBytes, countStyle: .file)) of \(session.sizeLabel)")
                             .font(.caption).foregroundStyle(Palette.muted)
                     }
-                    Text(session.status.isRemoteBusy
-                         ? "Looking for mistakes, missed steps, and ways to improve your work. You can leave the app; your review will continue."
-                         : "Keep Replay open while uploading. If you leave or lose connection, resume here without starting over.")
+                    Text(progressMessage(session.status))
                         .font(.subheadline).foregroundStyle(Palette.muted).lineSpacing(3)
                 }
                 if store.activeID == id && !session.status.isRemoteBusy {
@@ -146,5 +148,15 @@ struct SessionDetailView: View {
                 if session.error != nil { Button("Connection settings") { showSettings = true }.font(.subheadline.weight(.semibold)) }
             }
         }
+    }
+
+    private func progressMessage(_ status: SessionStatus) -> String {
+        if status == .verifying {
+            return "A second AI pass is checking the proposed problems against your video. Unsupported or uncertain claims are removed before you see the final review."
+        }
+        if status.isRemoteBusy {
+            return "Looking for mistakes, missed steps, and ways to improve your work. You can leave the app; your review will continue."
+        }
+        return "Keep Replay open while uploading. If you leave or lose connection, resume here without starting over."
     }
 }

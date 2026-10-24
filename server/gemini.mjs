@@ -1,26 +1,26 @@
-import { createReadStream } from 'node:fs';
+import { GoogleGenAI } from '@google/genai';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { setTimeout as delay } from 'node:timers/promises';
 import { reportSchema, systemInstruction, reviewPrompt, extractOutput, validateReport } from './report.mjs';
-
-const base = 'https://generativelanguage.googleapis.com';
+import { verificationSchema, verificationInstruction, verificationPrompt, validateVerification } from './verification.mjs';
 
 export class GeminiClient {
-  constructor({ apiKey, model = 'gemini-4-argon', fetchImpl = fetch, pollMs = 5000 }) {
-    this.apiKey = apiKey;
+  constructor({ apiKey, model = 'gemini-4-argon', sdk, pollMs = 5000, transport = fetch }) {
     this.model = model;
-    this.fetch = fetchImpl;
+    this.requestContext = new AsyncLocalStorage();
+    // Inject only the SDK interface in tests. Production always uses Google's SDK.
+    this.sdk = sdk ?? (apiKey ? new GoogleGenAI({ apiKey, vertexai: false, httpOptions: {
+      timeout: 120_000,
+      fetch: (resource, options) => {
+        // SDK 2.31's path uploader does not forward config.abortSignal to every
+        // chunk. Its supported transport hook applies our deadline to them all.
+        const signal = this.requestContext.getStore();
+        if (!signal) return transport(resource, options);
+        const sdkSignal = options?.signal ?? (resource instanceof Request ? resource.signal : undefined);
+        return transport(resource, { ...options, signal: AbortSignal.any([signal, sdkSignal].filter(Boolean)) });
+      }
+    } }) : null);
     this.pollMs = pollMs;
-  }
-
-  async request(path, options = {}) {
-    const response = await this.fetch(`${base}/v1beta/${path}`, {
-      ...options,
-      headers: { 'x-goog-api-key': this.apiKey, 'Content-Type': 'application/json', ...options.headers },
-      signal: options.signal ?? AbortSignal.timeout(90_000)
-    });
-    if (options.method === 'DELETE' && response.status === 404) return null;
-    if (!response.ok) throw this.apiError(response.status);
-    return response.status === 204 ? null : response.json();
   }
 
   apiError(status) {
@@ -31,103 +31,112 @@ export class GeminiClient {
       404: 'Gemini could not find the configured model or uploaded file. Check GEMINI_MODEL or retry.',
       429: 'Gemini’s quota or rate limit was reached. Check billing or try again later.'
     };
-    return new Error(messages[status] ?? `Gemini is temporarily unavailable (HTTP ${status}). Please retry later.`);
+    return new Error(messages[status] ?? 'Gemini is temporarily unavailable. Please retry later.');
+  }
+
+  async call(operation, { signal, deleting = false } = {}) {
+    if (!this.sdk) throw new Error('Add GEMINI_API_KEY to the server to enable reviews.');
+    signal?.throwIfAborted();
+    try { return await this.requestContext.run(signal, operation); }
+    catch (error) {
+      if (signal?.aborted) throw signal.reason;
+      const status = Number(error.status ?? error.statusCode ?? error.response?.status);
+      if (deleting && status === 404) return null;
+      // Provider error bodies can contain request data. Return only safe, useful messages.
+      throw this.apiError(status);
+    }
+  }
+
+  options(signal) {
+    return { signal: AbortSignal.any([signal, AbortSignal.timeout(120_000)]), timeout_ms: 120_000, maxRetries: 0 };
   }
 
   async upload(job, path, signal) {
-    const started = await this.fetch(`${base}/upload/v1beta/files`, {
-      method: 'POST',
-      headers: {
-        'x-goog-api-key': this.apiKey,
-        'Content-Type': 'application/json',
-        'X-Goog-Upload-Protocol': 'resumable',
-        'X-Goog-Upload-Command': 'start',
-        'X-Goog-Upload-Header-Content-Length': String(job.byteCount),
-        'X-Goog-Upload-Header-Content-Type': job.mimeType
-      },
-      body: JSON.stringify({ file: { display_name: `Replay ${job.id}` } }),
-      signal: AbortSignal.any([signal, AbortSignal.timeout(90_000)])
-    });
-    if (!started.ok) throw this.apiError(started.status);
-    const uploadURL = started.headers.get('x-goog-upload-url');
-    const parsed = uploadURL && new URL(uploadURL);
-    if (!parsed || parsed.protocol !== 'https:' ||
-        !(parsed.hostname === 'generativelanguage.googleapis.com' || parsed.hostname.endsWith('.googleapis.com'))) {
-      throw new Error('Gemini did not return a valid upload destination. Please retry.');
+    // Passing a path lets the official Node SDK upload in bounded 8 MiB chunks.
+    const file = await this.call(() => this.sdk.files.upload({
+      file: path,
+      config: { mimeType: job.mimeType, displayName: `Replay ${job.id}`, abortSignal: signal }
+    }), { signal });
+    if (!file?.name || !file?.uri) throw new Error('Gemini did not accept the uploaded video.');
+    return file;
+  }
+
+  async completed(id, signal, stage) {
+    let interaction;
+    do {
+      interaction = await this.call(() => this.sdk.interactions.get(id, {}, this.options(signal)), { signal });
+      if (['in_progress', 'queued'].includes(interaction.status)) await delay(this.pollMs, undefined, { signal });
+    } while (['in_progress', 'queued'].includes(interaction.status));
+    if (interaction.status !== 'completed') {
+      throw new Error(`Gemini could not complete the ${stage}. No unverified feedback was published. Try a clearer or shorter recording.`);
     }
-    const stream = createReadStream(path);
-    try {
-      const response = await this.fetch(uploadURL, {
-        method: 'POST',
-        headers: {
-          'Content-Length': String(job.byteCount),
-          'Content-Type': job.mimeType,
-          'X-Goog-Upload-Offset': '0',
-          'X-Goog-Upload-Command': 'upload, finalize'
-        },
-        body: stream,
-        duplex: 'half',
-        signal
-      });
-      if (!response.ok) throw this.apiError(response.status);
-      const result = await response.json();
-      if (!result.file?.name || !result.file?.uri) throw new Error('Gemini did not accept the uploaded video.');
-      return result.file;
-    } finally {
-      stream.destroy();
-    }
+    try { return JSON.parse(extractOutput(interaction)); }
+    catch { throw new Error(`Gemini returned an unreadable ${stage}. No unverified feedback was published. Please retry.`); }
+  }
+
+  async createInteraction(job, instruction, prompt, schema, signal) {
+    const interaction = await this.call(() => this.sdk.interactions.create({
+      model: this.model,
+      background: true,
+      system_instruction: instruction,
+      input: [
+        { type: 'video', uri: job.googleFile.uri, mime_type: job.mimeType, processing: 'agentic' },
+        { type: 'text', text: prompt }
+      ],
+      generation_config: { thinking_level: 'medium', max_output_tokens: 16_384 },
+      response_format: { type: 'text', mime_type: 'application/json', schema }
+    }, this.options(signal)), { signal });
+    if (!interaction.id) throw new Error('Gemini did not create the review. Please retry.');
+    return interaction.id;
   }
 
   async analyze(job, path, update, signal) {
+    const mark = async patch => update({ reviewTiming: { ...job.reviewTiming, ...patch } });
+    if (!job.reviewTiming?.startedAt) await mark({ startedAt: new Date().toISOString() });
     if (!job.googleFile) {
       const file = await this.upload(job, path, signal);
       await update({ googleFile: file });
     }
-    if (!job.interactionID) {
-      let file = await this.request(job.googleFile.name, { signal });
+    if (!job.interactionID && !job.candidateReport) {
+      let file = await this.call(() => this.sdk.files.get({ name: job.googleFile.name, config: { abortSignal: signal } }), { signal });
       while (file.state === 'PROCESSING') {
         await delay(this.pollMs, undefined, { signal });
-        file = await this.request(job.googleFile.name, { signal });
+        file = await this.call(() => this.sdk.files.get({ name: job.googleFile.name, config: { abortSignal: signal } }), { signal });
       }
-      if (file.state !== 'ACTIVE') throw new Error('Gemini could not read this video. Try exporting it as an MP4.');
+      if (file.state !== 'ACTIVE' || !file.uri) throw new Error('Gemini could not read this video. Try exporting it as an MP4.');
+      await update({ googleFile: file, status: 'analyzing' });
+      await mark({ analysisStartedAt: new Date().toISOString() });
+      const interactionID = await this.createInteraction(job, systemInstruction, reviewPrompt(job), reportSchema, signal);
+      await update({ interactionID });
+    }
+    if (!job.candidateReport) {
       await update({ status: 'analyzing' });
-      const interaction = await this.request('interactions', {
-        method: 'POST',
-        body: JSON.stringify({
-          model: this.model,
-          background: true,
-          system_instruction: systemInstruction,
-          input: [
-            { type: 'video', uri: file.uri, mime_type: job.mimeType, processing: 'agentic' },
-            { type: 'text', text: reviewPrompt(job) }
-          ],
-          generation_config: { thinking_level: 'medium', max_output_tokens: 16_384 },
-          response_format: { type: 'text', mime_type: 'application/json', schema: reportSchema }
-        }),
-        signal: AbortSignal.any([signal, AbortSignal.timeout(120_000)])
-      });
-      if (!interaction.id) throw new Error('Gemini did not create the analysis. Please retry.');
-      await update({ interactionID: interaction.id });
+      const candidateReport = validateReport(await this.completed(job.interactionID, signal, 'analysis'), job.durationSeconds);
+      // Persist the hypothesis before starting the evidence recheck, so a restart
+      // resumes the existing work instead of paying for another first pass.
+      await update({ candidateReport, status: 'verifying', reviewTiming: { ...job.reviewTiming, analysisCompletedAt: new Date().toISOString() } });
     }
-    let interaction = await this.request(`interactions/${encodeURIComponent(job.interactionID)}`, { signal });
-    while (['in_progress', 'queued'].includes(interaction.status)) {
-      await delay(this.pollMs, undefined, { signal });
-      interaction = await this.request(`interactions/${encodeURIComponent(job.interactionID)}`, { signal });
+    validateReport(job.candidateReport, job.durationSeconds);
+    await update({ status: 'verifying' });
+    if (!job.verificationInteractionID) {
+      await mark({ verificationStartedAt: new Date().toISOString() });
+      const verificationInteractionID = await this.createInteraction(job, verificationInstruction,
+        verificationPrompt(job, job.candidateReport), verificationSchema, signal);
+      await update({ verificationInteractionID });
     }
-    if (interaction.status !== 'completed') {
-      throw new Error('Gemini could not complete this analysis. Try a clearer or shorter recording.');
-    }
-    let parsed;
-    try { parsed = JSON.parse(extractOutput(interaction)); }
-    catch { throw new Error('Gemini returned an unreadable report. Please retry the analysis.'); }
-    return validateReport(parsed, job.durationSeconds);
+    const result = await this.completed(job.verificationInteractionID, signal, 'evidence recheck');
+    const completedAt = new Date().toISOString();
+    const report = validateVerification(result, job.candidateReport, job.durationSeconds, this.model, completedAt);
+    await mark({ completedAt, totalSeconds: Math.max(0, (Date.parse(completedAt) - Date.parse(job.reviewTiming.startedAt)) / 1000) });
+    return report;
   }
 
   async cleanup(job) {
     const tasks = [];
-    if (job.googleFile?.name) tasks.push(this.request(job.googleFile.name, { method: 'DELETE' }));
-    if (job.interactionID) tasks.push(this.request(`interactions/${encodeURIComponent(job.interactionID)}`, { method: 'DELETE' }));
-    const results = await Promise.allSettled(tasks);
-    return results.every(result => result.status === 'fulfilled');
+    if (job.googleFile?.name) tasks.push(this.call(() => this.sdk.files.delete({ name: job.googleFile.name }), { deleting: true }));
+    for (const id of new Set([job.interactionID, job.verificationInteractionID].filter(Boolean))) {
+      tasks.push(this.call(() => this.sdk.interactions.delete(id, {}, { timeout_ms: 90_000, maxRetries: 0 }), { deleting: true }));
+    }
+    return (await Promise.allSettled(tasks)).every(result => result.status === 'fulfilled');
   }
 }

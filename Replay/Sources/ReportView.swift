@@ -20,6 +20,10 @@ struct ReportContent: View {
                     .font(.system(size: 10, weight: .medium, design: .monospaced)).foregroundStyle(.white.opacity(0.55))
             }.padding(24).frame(maxWidth: .infinity, alignment: .leading).background(Palette.ink, in: RoundedRectangle(cornerRadius: 26))
 
+            if let verification = report.verification, verification.status == "completed" {
+                verificationCard(verification)
+            }
+
             if let issues = report.issues, !issues.isEmpty {
                 VStack(alignment: .leading, spacing: 14) {
                     Text("What needs fixing").font(.system(size: 21, weight: .semibold)).foregroundStyle(Palette.ink)
@@ -102,6 +106,33 @@ struct ReportContent: View {
                 }.foregroundStyle(Palette.muted).padding(.horizontal, 4)
             }
         }
+    }
+
+    private func verificationCard(_ verification: ReviewVerification) -> some View {
+        Card {
+            VStack(alignment: .leading, spacing: 12) {
+                Label("Evidence rechecked", systemImage: "checkmark.magnifyingglass")
+                    .font(.system(size: 16, weight: .semibold)).foregroundStyle(Palette.ink)
+                Text(verification.summary).font(.system(size: 13)).foregroundStyle(Palette.muted).lineSpacing(3)
+                Text("\(verification.confirmedIssueCount) of \(verification.candidateIssueCount) proposed issues retained")
+                    .font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.ink)
+                if let decisions = verification.decisions, !decisions.isEmpty {
+                    DisclosureGroup("See the review checks") {
+                        VStack(alignment: .leading, spacing: 16) {
+                            ForEach(decisions) { decision in
+                                VStack(alignment: .leading, spacing: 5) {
+                                    Text("Proposed issue \(decision.candidateIndex + 1) · \(decision.label)")
+                                        .font(.system(size: 11, weight: .semibold)).foregroundStyle(Palette.ink)
+                                    Text(decision.reason).font(.system(size: 12)).foregroundStyle(Palette.muted).lineSpacing(3)
+                                }
+                            }
+                        }.padding(.top, 12)
+                    }.font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.ink)
+                }
+                Text("Two AI passes reviewed the same video. Rechecking improves scrutiny; it does not guarantee correctness.")
+                    .font(.system(size: 11)).foregroundStyle(Palette.muted).lineSpacing(2)
+            }
+        }.accessibilityIdentifier("verification-summary")
     }
 
     private func issueCard(_ issue: ReviewIssue) -> some View {

@@ -7,7 +7,7 @@ export const MAX_BYTES = 2_000_000_000;
 export const CHUNK_BYTES = 8 * 1024 * 1024;
 const MAX_STORED_BYTES = 8_000_000_000;
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
-const busyStates = new Set(['queued', 'processing', 'analyzing']);
+const busyStates = new Set(['queued', 'processing', 'analyzing', 'verifying']);
 const terminalStates = new Set(['complete', 'failed']);
 
 class HTTPError extends Error {
@@ -92,7 +92,8 @@ export async function createApp({ dataDir, token, provider, configured = true, r
     return {
       id: job.id, status: job.status, byteCount: job.byteCount,
       uploadedBytes: await uploadedBytes(job), report: job.report ?? null,
-      error: job.error ?? null, model: provider.model, updatedAt: job.updatedAt
+      error: job.error ?? null, model: provider.model, updatedAt: job.updatedAt,
+      reviewTiming: job.reviewTiming ?? null
     };
   }
 
@@ -107,10 +108,13 @@ export async function createApp({ dataDir, token, provider, configured = true, r
   }
 
   async function cleanupRemote(job) {
-    if (!job.googleFile && !job.interactionID) return true;
+    if (!job.googleFile && !job.interactionID && !job.verificationInteractionID) return true;
     let cleaned = false;
     try { cleaned = await provider.cleanup(job); } catch { /* Retried by the retention sweep. */ }
-    if (cleaned) { delete job.googleFile; delete job.interactionID; await save(job); }
+    if (cleaned) {
+      delete job.googleFile; delete job.interactionID; delete job.verificationInteractionID;
+      await save(job);
+    }
     return cleaned;
   }
 
@@ -120,7 +124,7 @@ export async function createApp({ dataDir, token, provider, configured = true, r
       await lock(job.id, async () => {
         const expired = Date.now() - Date.parse(job.createdAt) > retentionMs;
         if (terminalStates.has(job.status) || expired) await cleanupRemote(job);
-        if (expired && !job.googleFile && !job.interactionID) {
+        if (expired && !job.googleFile && !job.interactionID && !job.verificationInteractionID) {
           await rm(videoPath(job.id), { force: true });
           await rm(metadataPath(job.id), { force: true });
           jobs.delete(job.id);
@@ -142,16 +146,26 @@ export async function createApp({ dataDir, token, provider, configured = true, r
         try {
           await update({ status: 'processing', error: null });
           const report = await provider.analyze(job, videoPath(job.id), update, signal);
-          await update({ status: 'complete', report });
-          await rm(videoPath(job.id), { force: true });
+          if (report?.verification?.status !== 'completed') {
+            throw new Error('The AI evidence recheck did not finish. No unverified feedback was published. Please retry.');
+          }
+          // Hold the same lock used by DELETE, retry, and retention throughout
+          // terminal publication and cleanup, including saves made by cleanup.
+          await lock(job.id, async () => {
+            await rm(videoPath(job.id), { force: true });
+            await update({ status: 'complete', report, candidateReport: undefined });
+            await cleanupRemote(job);
+          });
         } catch (error) {
           if (closing) { await update({ status: 'queued' }); break; }
           const message = signal.aborted
             ? 'The review took too long. Retry or choose a shorter recording.'
             : error.message || 'The analysis was interrupted. Please retry.';
-          await update({ status: 'failed', error: message });
+          await lock(job.id, async () => {
+            await update({ status: 'failed', error: message, report: null });
+            await cleanupRemote(job);
+          });
         }
-        await cleanupRemote(job);
         controller = undefined;
       }
     })().catch(error => console.error('Worker could not save a session:', error.code ?? 'storage error'))
@@ -196,6 +210,7 @@ export async function createApp({ dataDir, token, provider, configured = true, r
       if (!job) throw new HTTPError(404, 'This server session has expired. Upload the video again.');
       if (request.method === 'GET' && !action) return json(response, 200, await publicJob(job));
       await lock(id, async () => {
+        if (jobs.get(id) !== job) throw new HTTPError(404, 'This server session has expired. Upload the video again.');
         if (request.method === 'PUT' && action === 'video') {
           if (job.status !== 'uploading') throw new HTTPError(409, 'This session is already being reviewed.');
           const offset = Number(request.headers['upload-offset']);
@@ -216,7 +231,8 @@ export async function createApp({ dataDir, token, provider, configured = true, r
           if (await uploadedBytes(job) !== job.byteCount) throw new HTTPError(409, 'Finish uploading the video before requesting a review.');
           // Never reuse a failed/expired interaction on a deliberate retry.
           if (!await cleanupRemote(job)) throw new HTTPError(503, 'The previous review is still being cleaned up. Please retry shortly.');
-          job.status = 'queued'; job.error = null;
+          job.status = 'queued'; job.error = null; job.report = null;
+          delete job.candidateReport; delete job.reviewTiming;
           await save(job);
           json(response, 202, await publicJob(job));
           startWorker();
