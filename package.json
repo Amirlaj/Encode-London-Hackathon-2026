@@ -1,0 +1,12 @@
+{
+  "name": "replay-video-coach",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.13" },
+  "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "start": "node server/index.mjs",
+    "dev": "node --watch server/index.mjs",
+    "test": "node --test server/test/*.test.mjs"
+  }
+}
