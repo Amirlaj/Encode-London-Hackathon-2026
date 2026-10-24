@@ -13,7 +13,7 @@
 | Team members | **[ADD NAMES]** |
 | Real user | **[FIRST NAME, ROLE OR SITUATION]** |
 | Task demonstrated | **[ONE SPECIFIC TASK THAT PERSON ACTUALLY DOES]** |
-| Submission commit | **[ADD FINAL COMMIT SHA AFTER PUSHING]** |
+| Tested application commit | `bd3635c7a6b81abcb1d9e3a82468e51f9b5841c1` — already pushed; update if code changes after rehearsal |
 
 ## One sentence
 

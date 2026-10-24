@@ -19,7 +19,7 @@ These timestamps place the recorded commits on 24 October 2026. Commit timestamp
 - Official kickoff date, time, and timezone: **[CONFIRM WITH ORGANISERS]**
 - Team confirmation that demonstrated application code was written after kickoff: **[PENDING]**
 - Pre-existing code, templates, or assets used: **[LIST, OR CONFIRM NONE BEYOND DECLARED LIBRARIES/FRAMEWORKS]**
-- Final submitted commit SHA: **[ADD AFTER FINAL PUSH]**
+- Tested and published application revision: [`bd3635c7a6b81abcb1d9e3a82468e51f9b5841c1`](https://github.com/Amirlaj/Encode-London-Hackathon-2026/commit/bd3635c7a6b81abcb1d9e3a82468e51f9b5841c1). Its [GitHub Actions checks](https://github.com/Amirlaj/Encode-London-Hackathon-2026/actions/runs/40135677863) passed. Update the submission revision if application code changes after the live rehearsal.
 
 AI coding assistance was used to create and revise Replay. Do not describe the project as written without AI assistance. The application is built with Apple's SwiftUI and AVFoundation frameworks, a Node.js server, and the Google Gen AI SDK. The SDK dependency is pinned in the package files.
 

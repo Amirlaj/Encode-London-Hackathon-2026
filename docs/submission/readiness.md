@@ -13,7 +13,7 @@ The project is prepared for a Pathway 2 demonstration. It is not ready to be rep
 
 ## Required submission items
 
-- [ ] The final code is pushed to the [GitHub repository](https://github.com/Amirlaj/Encode-London-Hackathon-2026), and judges can access it.
+- [x] The prepared application code is pushed to the public [GitHub repository](https://github.com/Amirlaj/Encode-London-Hackathon-2026) at `bd3635c7a6b81abcb1d9e3a82468e51f9b5841c1`. Update the submission reference if the code changes after rehearsal.
 - [ ] A judge-accessible three-minute demo video URL is added to [submission-draft.md](submission-draft.md).
 - [ ] The team can demonstrate the app live with a real input.
 - [ ] The submission names the exact Gemini model and explains its use.
@@ -45,7 +45,7 @@ Fill this from an actual run. Do not copy values from a mocked test or the built
 
 | Evidence | Result |
 | --- | --- |
-| Final commit SHA | **[PENDING]** |
+| Tested application commit | [`bd3635c7a6b81abcb1d9e3a82468e51f9b5841c1`](https://github.com/Amirlaj/Encode-London-Hackathon-2026/commit/bd3635c7a6b81abcb1d9e3a82468e51f9b5841c1); pushed to public `main` |
 | Exact SDK package and version | `@google/genai` 2.31.0, pinned and installed |
 | Device, OS, server, network | **[PENDING]** |
 | Real user and task | **[PENDING USER CONFIRMATION]** |
@@ -61,6 +61,7 @@ Fill this from an actual run. Do not copy values from a mocked test or the built
 | Tooling tests | `npm run test:tooling` — 9 passing tests; no Google calls |
 | iOS tests | 8 unit tests and 3 UI tests passed across a full run and a targeted rerun after correcting the checklist UI selector |
 | Aggregate automated checks | 44 passed; no live model access, feedback accuracy, or elapsed-time claim follows from this result |
+| GitHub Actions | [Checks run 40135677863](https://github.com/Amirlaj/Encode-London-Hackathon-2026/actions/runs/40135677863) passed on the tested application commit: Node 24 install, backend tests, tooling tests |
 | Physical iPhone build | Unsigned Release build passed on 24 October 2026; not installed on a physical device. An existing CameraManager Sendable warning remains. |
 | Repository credential check | 47 candidate files scanned before publication; no local connection token, configured key, or Google key-pattern matches. Recording still needs checking when made. |
 | Demo video URL, checked signed out | **[PENDING RECORDING]** |
@@ -73,4 +74,4 @@ The iOS full run passed 8 unit and 2 UI tests; the remaining checklist test init
 2. Put the hackathon Gemini key in the local server configuration, run `npm run doctor`, and restart the server. Do not send the key in chat or commit it.
 3. Supply a suitable recording the team is allowed to upload, and have a person identify the visible issue and uncertainty before the model run.
 4. Run `npm run rehearse -- --help`, measure a real workflow, and compare the saved report with the human observations. Rehearse it again from the app on the presentation setup, then record the three-minute demo and share its link.
-5. Confirm the kickoff eligibility, final team names, submission portal, and deadline. Push the final reviewed code and submit the repository and video links.
+5. Confirm the kickoff eligibility, final team names, submission portal, and deadline. The prepared code is already pushed; submit the repository and video links once the remaining facts and live checks are complete.
